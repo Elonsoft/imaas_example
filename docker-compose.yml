@@ -1,0 +1,74 @@
+version: '3.7'
+networks:
+  web:
+    external: false
+  internal:
+    external: false
+
+volumes:
+  postgres_db:
+    name: postgres_db
+  image_db:
+    name: image_db
+
+services:
+  client:
+    build:
+      context: ./web_client
+      args:
+        - "API_URL=http://${API_INTERNAL_HOST}"
+        - "MIX_ENV=${MIX_ENV}"
+    restart: unless-stopped
+    command: ./bin/imaas_client start
+    networks:
+      - web
+    ports:
+      - '18081:4000'
+    environment:
+      - "API_URL=http://${API_INTERNAL_HOST}"
+      - "APPLICATION_HOST=${WEB_HOST}"
+    depends_on:
+      - api
+  api:
+    build:
+      context: ./api
+      args:
+        - "MIX_ENV=${MIX_ENV}"
+    restart: unless-stopped
+    command: sh -c "./bin/imaas eval Imaas.Releases.create && ./bin/imaas eval Imaas.Releases.migrate && ./bin/imaas start"
+    networks:
+      - web
+      - internal
+    ports:
+      - '18080:4000'
+    environment:
+      - "WEB_URL=http://${WEB_HOST}"
+      - "APPLICATION_HOST=${API_APPLICATION_HOST}"
+      - "SECRET_KEY_BASE=${SECRET_KEY_BASE}"
+      - "CONVERTER_URL=http://imaas_imagemagick_1:4000"
+      - "POSTGRES_USER=${POSTGRES_USER}"
+      - "POSTGRES_PASSWORD=${POSTGRES_PASSWORD}"
+      - "POSTGRES_DB=${POSTGRES_DB}"
+      - "POSTGRES_HOST=${POSTGRES_HOST}"
+    volumes:
+      - image_db:/opt/app/lib/imaas-0.1.0/uploads
+    depends_on:
+      - db
+      - imagemagick
+  db:
+    image: mdillon/postgis:9.6
+    container_name: db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_HOST=${POSTGRES_HOST}
+    volumes:
+      - postgres_db:/var/lib/postgresql/data
+    networks:
+      - internal
+  imagemagick:
+    image: yunmikun2/imaas:latest
+    restart: unless-stopped
+    networks:
+      - internal
